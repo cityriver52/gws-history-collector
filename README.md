@@ -30,7 +30,20 @@ Drive Activity API v2 を使います。
 - 対象ファイル／フォルダ名、ID、MIME type
 - 実行者（APIから識別できる範囲）
 
-既定では自分の操作とシステムイベントを中心に保存します。`DRIVE_INCLUDE_OTHER_ACTORS: true` にすると、取得できる他ユーザーの操作も保存対象にします。
+既定では My Drive 配下を対象にし、自分の操作とシステムイベントを中心に保存します。`DRIVE_INCLUDE_OTHER_ACTORS: true` にすると、取得できる他ユーザーの操作も保存対象にします。
+
+#### 共有ドライブ / 追加フォルダ
+
+Drive Activity API はフォルダIDを `ancestorName` に指定すると、その配下全体の活動を取得できます。そのため `DRIVE_EXTRA_ANCESTOR_IDS` に共有ドライブのルートIDや追加で追いたいフォルダIDを入れれば、それぞれ独立したカーソルで追跡します。
+
+```javascript
+DRIVE_EXTRA_ANCESTOR_IDS: [
+  'SHARED_DRIVE_ROOT_ID',
+  'ANOTHER_FOLDER_ID',
+],
+```
+
+共有ドライブをAPIで自動列挙することもできますが、そのためには Drive API の `drive.readonly` のような、ファイル内容まで読める強い scope が必要になります。この Collector では「活動メタデータを集めるためだけに内容読取権限を増やさない」方を優先し、自動列挙はしていません。
 
 ### Gmail
 
@@ -206,6 +219,7 @@ CALENDAR_OCCURRENCE_LOOKBACK_DAYS: 30,
 TRIGGER_MINUTES: 10,
 ENABLED_SOURCES: ['drive', 'gmail', 'calendar', 'tasks', 'meet', 'chat'],
 DRIVE_INCLUDE_OTHER_ACTORS: false,
+DRIVE_EXTRA_ANCESTOR_IDS: [],
 STORE_GMAIL_COUNTERPARTIES: true,
 STORE_CALENDAR_ATTENDEES: false,
 STORE_CHAT_TEXT: false,
