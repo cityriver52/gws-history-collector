@@ -7,6 +7,7 @@ const HC_CONFIG = Object.freeze({
   ENABLED_SOURCES: ['drive', 'gmail', 'calendar', 'tasks', 'meet', 'chat'],
 
   DRIVE_INCLUDE_OTHER_ACTORS: false,
+  DRIVE_EXTRA_ANCESTOR_IDS: [],
   STORE_GMAIL_COUNTERPARTIES: true,
   STORE_CALENDAR_ATTENDEES: false,
   STORE_CHAT_TEXT: false,
