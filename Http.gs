@@ -60,6 +60,49 @@ function hcPostJson_(url, body) {
   return hcApiJson_('post', url, body || {});
 }
 
+function hcGetManyJson_(urls) {
+  if (!urls || !urls.length) return [];
+  const token = ScriptApp.getOAuthToken();
+  const output = [];
+  const chunkSize = 100;
+
+  for (let start = 0; start < urls.length; start += chunkSize) {
+    const chunk = urls.slice(start, start + chunkSize);
+    const requests = chunk.map(function(url) {
+      return {
+        url: url,
+        method: 'get',
+        muteHttpExceptions: true,
+        headers: {
+          Authorization: 'Bearer ' + token,
+          Accept: 'application/json',
+        },
+      };
+    });
+
+    const responses = UrlFetchApp.fetchAll(requests);
+    responses.forEach(function(response, index) {
+      const code = response.getResponseCode();
+      const text = response.getContentText() || '';
+      if (code >= 200 && code < 300) {
+        output.push(text ? JSON.parse(text) : {});
+        return;
+      }
+      if (code === 404) {
+        output.push(null);
+        return;
+      }
+      const err = new Error('Google API batch request failed (' + code + '): ' + text.substring(0, 1500));
+      err.httpCode = code;
+      err.responseBody = text;
+      err.requestUrl = chunk[index];
+      throw err;
+    });
+  }
+
+  return output;
+}
+
 function hcIso_(value) {
   if (!value) return '';
   const d = value instanceof Date ? value : new Date(value);
