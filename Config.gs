@@ -4,6 +4,8 @@ const HC_CONFIG = Object.freeze({
   CALENDAR_OCCURRENCE_LOOKBACK_DAYS: 30,
   TRIGGER_MINUTES: 10,
 
+  ENABLED_SOURCES: ['drive', 'gmail', 'calendar', 'tasks', 'meet', 'chat'],
+
   DRIVE_INCLUDE_OTHER_ACTORS: false,
   STORE_GMAIL_COUNTERPARTIES: true,
   STORE_CALENDAR_ATTENDEES: false,
