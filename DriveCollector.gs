@@ -1,7 +1,32 @@
 function hcCollectDrive_() {
   const runStarted = new Date();
-  const cursor = hcGetState_(HC_KEYS.DRIVE_CURSOR, hcDaysAgoIso_(HC_CONFIG.INITIAL_LOOKBACK_DAYS));
-  let pageToken = hcGetState_('hc_drive_page_token', '');
+  const ancestors = [{ id: 'root', label: 'My Drive' }];
+  (HC_CONFIG.DRIVE_EXTRA_ANCESTOR_IDS || []).forEach(function(id) {
+    if (!id) return;
+    ancestors.push({ id: String(id), label: 'Drive ancestor ' + String(id) });
+  });
+
+  const events = [];
+  let rootError = null;
+  ancestors.forEach(function(ancestor) {
+    try {
+      events.push.apply(events, hcCollectDriveAncestor_(ancestor, runStarted));
+    } catch (error) {
+      if (ancestor.id === 'root') rootError = error;
+      else hcLogError_('drive:' + ancestor.id, error);
+    }
+  });
+
+  if (rootError) throw rootError;
+  return events;
+}
+
+function hcCollectDriveAncestor_(ancestor, runStarted) {
+  const suffix = hcDriveStateSuffix_(ancestor.id);
+  const cursorKey = ancestor.id === 'root' ? HC_KEYS.DRIVE_CURSOR : 'hc_drive_cursor_' + suffix;
+  const pageKey = ancestor.id === 'root' ? 'hc_drive_page_token' : 'hc_drive_page_token_' + suffix;
+  const cursor = hcGetState_(cursorKey, hcDaysAgoIso_(HC_CONFIG.INITIAL_LOOKBACK_DAYS));
+  let pageToken = hcGetState_(pageKey, '');
   let pages = 0;
   let completed = true;
   const events = [];
@@ -10,6 +35,7 @@ function hcCollectDrive_() {
     const body = {
       pageSize: 100,
       filter: 'time > "' + cursor + '"',
+      ancestorName: 'items/' + ancestor.id,
       consolidationStrategy: { none: {} },
     };
     if (pageToken) body.pageToken = pageToken;
@@ -19,10 +45,17 @@ function hcCollectDrive_() {
       if (!hcShouldKeepDriveActivity_(activity)) return;
       const actors = hcDriveActors_(activity.actors || []);
       const targets = (activity.targets && activity.targets.length) ? activity.targets : [{}];
-      const actions = (activity.actions && activity.actions.length) ? activity.actions : [{}];
+      const actions = (activity.actions && activity.actions.length)
+        ? activity.actions
+        : [{
+            detail: activity.primaryActionDetail || {},
+            timestamp: activity.timestamp || '',
+            timeRange: activity.timeRange || null,
+          }];
 
       actions.forEach(function(action) {
-        const actionName = hcFirstKey_(action.detail || {}) || 'activity';
+        const detail = action.detail || activity.primaryActionDetail || {};
+        const actionName = hcFirstKey_(detail) || 'activity';
         const when = action.timestamp ||
           (action.timeRange && (action.timeRange.endTime || action.timeRange.startTime)) ||
           activity.timestamp ||
@@ -39,13 +72,15 @@ function hcCollectDrive_() {
             object_type: t.type,
             object_id: t.id,
             object_name: t.name,
-            container_id: t.parentId,
-            container_name: '',
+            container_id: t.parentId || ancestor.id,
+            container_name: t.parentId ? '' : ancestor.label,
             url: t.url,
             direction: '',
             details: {
-              action_detail: action.detail || {},
+              action_detail: detail,
               target_meta: t.meta,
+              queried_ancestor_id: ancestor.id,
+              queried_ancestor_label: ancestor.label,
             },
           });
         });
@@ -56,18 +91,22 @@ function hcCollectDrive_() {
     pages++;
     if (pageToken && pages >= HC_CONFIG.DRIVE_MAX_PAGES_PER_RUN) {
       completed = false;
-      hcSetState_('hc_drive_page_token', pageToken);
+      hcSetState_(pageKey, pageToken);
       break;
     }
   } while (pageToken);
 
   if (completed) {
-    hcSetState_('hc_drive_page_token', '');
+    hcSetState_(pageKey, '');
     const overlapMs = 2 * 60 * 1000;
-    hcSetState_(HC_KEYS.DRIVE_CURSOR, new Date(runStarted.getTime() - overlapMs).toISOString());
+    hcSetState_(cursorKey, new Date(runStarted.getTime() - overlapMs).toISOString());
   }
 
   return events;
+}
+
+function hcDriveStateSuffix_(value) {
+  return String(value || '').replace(/[^A-Za-z0-9_-]/g, '_');
 }
 
 function hcShouldKeepDriveActivity_(activity) {
@@ -121,7 +160,7 @@ function hcDriveTarget_(target) {
       parentId: '',
       url: id ? 'https://drive.google.com/open?id=' + encodeURIComponent(id) : '',
       meta: {
-        mime_type: item.mimeType || (item.driveFile && item.driveFile.mimeType) || '',
+        mime_type: item.mimeType || '',
         owner: item.owner || null,
         drive: item.drive || null,
       },
