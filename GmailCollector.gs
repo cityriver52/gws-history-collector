@@ -83,17 +83,20 @@ function hcBootstrapGmail_(profile) {
   let reachedCutoff = false;
 
   do {
+    const remaining = Math.max(0, HC_CONFIG.GMAIL_INITIAL_MAX_MESSAGES - scanned);
+    if (!remaining) break;
+
     const response = hcGetJson_('https://gmail.googleapis.com/gmail/v1/users/me/messages', {
-      maxResults: 500,
+      maxResults: Math.min(500, remaining),
       pageToken: pageToken,
       includeSpamTrash: true,
     });
 
     const messages = response.messages || [];
-    for (let i = 0; i < messages.length; i++) {
-      if (scanned >= HC_CONFIG.GMAIL_INITIAL_MAX_MESSAGES) break;
-      const meta = hcGetGmailMessageMeta_(messages[i].id);
+    const metas = hcGetGmailMessagesMetaBatch_(messages.map(function(message) { return message.id; }));
+    for (let i = 0; i < metas.length; i++) {
       scanned++;
+      const meta = metas[i];
       if (!meta) continue;
       const internalMs = Number(meta.internalDate || 0);
       if (internalMs && internalMs < cutoffMs) {
@@ -137,6 +140,16 @@ function hcGetGmailMessageMeta_(messageId) {
     format: 'metadata',
     metadataHeaders: ['Subject', 'From', 'To', 'Cc', 'Date'],
   });
+}
+
+function hcGetGmailMessagesMetaBatch_(messageIds) {
+  const urls = (messageIds || []).filter(Boolean).map(function(messageId) {
+    return hcBuildUrl_('https://gmail.googleapis.com/gmail/v1/users/me/messages/' + encodeURIComponent(messageId), {
+      format: 'metadata',
+      metadataHeaders: ['Subject', 'From', 'To', 'Cc', 'Date'],
+    });
+  });
+  return hcGetManyJson_(urls);
 }
 
 function hcGmailMessageEvent_(message, action, collectedAt) {
