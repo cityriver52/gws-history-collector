@@ -13,7 +13,14 @@ function hcCollectChat_() {
     try {
       events.push.apply(events, hcCollectChatSpace_(space, runStarted));
     } catch (error) {
-      hcLogError_('chat:' + (space.name || 'unknown'), error);
+      hcLogError_('chat-events:' + (space.name || 'unknown'), error);
+    }
+
+    try {
+      const readEvent = hcCollectChatReadState_(space);
+      if (readEvent) events.push(readEvent);
+    } catch (error) {
+      hcLogError_('chat-read-state:' + (space.name || 'unknown'), error);
     }
   });
 
@@ -37,7 +44,7 @@ function hcListChatSpaces_() {
 
 function hcCollectChatSpace_(space, runStarted) {
   const events = [];
-  const stateKey = 'hc_chat_cursor_' + String(space.name || '').replace(/[^A-Za-z0-9_-]/g, '_');
+  const stateKey = 'hc_chat_cursor_' + hcChatStateSuffix_(space.name);
   const cursor = hcGetState_(stateKey, hcDaysAgoIso_(Math.min(HC_CONFIG.INITIAL_LOOKBACK_DAYS, 27)));
   let pageToken = '';
   let pages = 0;
@@ -82,6 +89,50 @@ function hcCollectChatSpace_(space, runStarted) {
   return events;
 }
 
+function hcCollectChatReadState_(space) {
+  if (!space || !space.name) return null;
+  const spaceId = String(space.name).replace(/^spaces\//, '');
+  if (!spaceId) return null;
+
+  const state = hcGetJson_(
+    'https://chat.googleapis.com/v1/users/me/spaces/' + encodeURIComponent(spaceId) + '/spaceReadState'
+  );
+  const lastReadTime = state.lastReadTime || '';
+  if (!lastReadTime) return null;
+
+  const stateKey = 'hc_chat_read_' + hcChatStateSuffix_(space.name);
+  const previous = hcGetState_(stateKey, '');
+  hcSetState_(stateKey, lastReadTime);
+  if (previous === lastReadTime) return null;
+
+  if (!previous) {
+    const cutoff = Date.now() - HC_CONFIG.INITIAL_LOOKBACK_DAYS * 24 * 60 * 60 * 1000;
+    if (new Date(lastReadTime).getTime() < cutoff) return null;
+  }
+
+  return {
+    event_time: lastReadTime,
+    source: 'chat',
+    action: 'space_read_state_updated',
+    actor: 'self',
+    object_type: 'chat_read_state',
+    object_id: state.name || '',
+    object_name: '',
+    container_id: space.name || '',
+    container_name: space.displayName || space.spaceType || '',
+    url: space.spaceUri || '',
+    direction: '',
+    details: {
+      last_read_time: lastReadTime,
+      previous_last_read_time: previous,
+    },
+  };
+}
+
+function hcChatStateSuffix_(spaceName) {
+  return String(spaceName || '').replace(/[^A-Za-z0-9_-]/g, '_');
+}
+
 function hcChatEvent_(space, spaceEvent) {
   const type = spaceEvent.eventType || 'google.workspace.chat.unknown.v1.event';
   const payload = hcChatPayload_(spaceEvent);
@@ -102,7 +153,7 @@ function hcChatEvent_(space, spaceEvent) {
     object_name: extracted.objectName,
     container_id: space.name || '',
     container_name: space.displayName || space.spaceType || '',
-    url: '',
+    url: space.spaceUri || '',
     direction: '',
     details: details,
   };
