@@ -6,7 +6,7 @@ function setup() {
     .everyMinutes(HC_CONFIG.TRIGGER_MINUTES)
     .create();
 
-  ['drive', 'gmail', 'calendar', 'chat'].forEach(function(source) {
+  ['drive', 'gmail', 'calendar', 'chat', 'tasks', 'meet'].forEach(function(source) {
     hcWriteStatus_(source, 'ready', 0, 'setup complete');
   });
 
@@ -21,6 +21,8 @@ function collectAll() {
     hcRunCollector_('drive', hcCollectDrive_);
     hcRunCollector_('gmail', hcCollectGmail_);
     hcRunCollector_('calendar', hcCollectCalendar_);
+    hcRunCollector_('tasks', hcCollectTasks_);
+    hcRunCollector_('meet', hcCollectMeet_);
     hcRunCollector_('chat', hcCollectChat_);
   } finally {
     lock.releaseLock();
@@ -37,6 +39,14 @@ function collectGmail() {
 
 function collectCalendar() {
   return hcRunSingleWithLock_('calendar', hcCollectCalendar_);
+}
+
+function collectTasks() {
+  return hcRunSingleWithLock_('tasks', hcCollectTasks_);
+}
+
+function collectMeet() {
+  return hcRunSingleWithLock_('meet', hcCollectMeet_);
 }
 
 function collectChat() {
