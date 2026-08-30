@@ -10,7 +10,7 @@ Google Workspace 上に自然に残る「仕事の足跡」を自動収集し、
 - まず「何をしていたか」を後から復元するための痕跡を広く集める
 - メール本文、Chat本文、予定説明、Tasksのメモ、Meetの録画・文字起こしなどは原則として複製しない
 - すべてのサービスを `Events` の共通形式へ正規化する
-- 1つのAPIが権限エラーになっても、ほかの Collector は動かし続ける
+- 1つのAPIが実行時エラーになっても、ほかの Collector は動かし続ける
 - 後段のAIがイベントを時間・共起・スレッド・ファイル等でまとめて `Work Episode` を推定する前提で設計する
 
 ## 現在の収集対象
@@ -38,7 +38,7 @@ Gmail API のメタデータと History API を使います。**メール本文�
 
 - メッセージ追加（受信 / 送信 / 下書き等）
 - 完全削除
-- ラベル追加 / 削除
+- ラベル追加 / 削除（既読・未読等の変化も含め、APIが返すもの）
 - 件名
 - From / To / Cc（設定で縮小可能）
 - threadId / messageId
@@ -94,13 +94,16 @@ Google Meet REST API の Conference Records を使い、Calendar の「予定」
 
 ### Google Chat
 
-ユーザーが参加している Space / Group Chat / DM を列挙し、Space Events API からイベントを追跡します。
+ユーザーが参加している Space / Group Chat / DM を列挙し、Space Events API と自分の Space Read State を追跡します。
 
 - メッセージ作成 / 更新 / 削除
 - リアクション追加 / 削除
 - メンバーシップ作成 / 更新 / 削除
 - Space 更新
 - バッチイベント
+- **自分の Space 最終既読時刻が進んだこと**
+
+既読位置は「Chatを実際に見た」痕跡として `space_read_state_updated` イベントにします。既読時刻そのものだけを保存し、本文は必要ありません。
 
 **既定では Chat 本文を保存しません。** Space 名、イベントID、メッセージ等のリソースID、送信者リソースなどのメタデータを保存します。必要な場合だけ `STORE_CHAT_TEXT: true` にしてください。
 
@@ -137,7 +140,7 @@ Chat のイベント履歴は永続的にAPIから取得できるわけではな
 
 ### Errors
 
-API エラーを記録します。1サービスが失敗しても、ほかの Collector は継続します。
+API エラーを記録します。1サービスの**実行時**エラーは、ほかの Collector を止めません。
 
 ## セットアップ
 
@@ -154,27 +157,42 @@ API エラーを記録します。1サービスが失敗しても、ほかの Co
 5. `setup()` を手動実行し、OAuth 権限を承認します。
 6. 作成されたスプレッドシートを確認します。
 7. `collectAll()` を一度手動実行します。
-8. `Status` と `Errors` を見て、職場アカウントで許可されているAPIを確認します。
+8. `Status` と `Errors` を見て、職場アカウントで利用できるAPIを確認します。
 
 `setup()` は既定で10分おきの `collectAll` トリガーも作成します。重複した Collector トリガーは削除してから作り直します。
 
 ## 職場アカウントでAPIが拒否された場合
 
-このプロジェクトは管理者ポリシーを回避しません。OAuth アプリ制御やAPI利用制限により 401 / 403 になるサービスがあれば、`Errors` に記録されます。
+このプロジェクトは管理者ポリシーを回避しません。OAuth アプリ制御やAPI利用制限により 401 / 403 になるサービスがあれば `Errors` に記録されます。
 
-そのサービスだけ `Config.gs` の `ENABLED_SOURCES` から外してください。
+実行時にだけ拒否されるサービスなら、`Config.gs` の `ENABLED_SOURCES` から外せば残りだけ動かせます。
 
 ```javascript
 ENABLED_SOURCES: ['drive', 'gmail', 'calendar', 'tasks', 'meet', 'chat'],
 ```
 
-たとえば Chat と Meet が許可されない場合は次のようにできます。
+たとえば Chat と Meet を使わない場合:
 
 ```javascript
 ENABLED_SOURCES: ['drive', 'gmail', 'calendar', 'tasks'],
 ```
 
-これで残りの Collector は継続できます。
+### OAuth承認そのものがブロックされる場合
+
+Apps Script の OAuth scope は `appsscript.json` に静的に書かれています。そのため、組織が特定 scope の**承認自体を禁止**している場合は `ENABLED_SOURCES` を変えるだけでは足りません。利用しないサービスの scope も `appsscript.json` から外してください。
+
+対応関係は次のとおりです。
+
+| source | 主な scope |
+|---|---|
+| drive | `drive.activity.readonly` |
+| gmail | `gmail.metadata` |
+| calendar | `calendar.readonly` |
+| tasks | `tasks.readonly` |
+| meet | `meetings.space.readonly` |
+| chat | `chat.spaces.readonly`, `chat.messages.readonly`, `chat.messages.reactions.readonly`, `chat.memberships.readonly`, `chat.users.readstate.readonly` |
+
+`spreadsheets`, `script.scriptapp`, `script.external_request` は Collector 基盤自体で使います。
 
 Google Chat は Workspace / Cloud Project 側の Chat API 設定や組織ポリシーによって利用できない場合があります。最初から必須とはせず、使えなければ Chat だけ無効化してください。
 
